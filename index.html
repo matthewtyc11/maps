@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>My Smooth GPS Tracker</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        #map { height: 100vh; width: 100vw; }
+        
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            display: flex;
+            gap: 10px;
+        }
+        
+        button {
+            padding: 12px 18px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        
+        #startBtn { background-color: #2b82cb; } /* Smooth Blue */
+        #clearBtn { background-color: #e74c3c; } /* Smooth Red */
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+    
+    <div id="controls">
+        <button id="startBtn">Start Tracking</button>
+        <button id="clearBtn">Clear Track</button>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // 1. Initialize the map
+        const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
+
+        // Add zoom control to the top right instead of top left
+        L.control.zoom({ position: 'topright' }).addTo(map);
+
+        // 2. Add the smooth CartoDB Voyager tiles (Looks like Google Maps, but free!)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            maxZoom: 20,
+            attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+        }).addTo(map);
+
+        // 3. Load saved path from your phone's Local Storage
+        let savedPath = JSON.parse(localStorage.getItem('myGpsPath')) || [];
+        
+        // 4. Create a line to show your path on the map
+        let pathLine = L.polyline(savedPath, {color: '#2b82cb', weight: 5, opacity: 0.8}).addTo(map);
+        let currentMarker = null;
+        let watchId = null;
+
+        // If there is a saved history, center the map on it
+        if (savedPath.length > 0) {
+            map.fitBounds(pathLine.getBounds());
+            currentMarker = L.marker(savedPath[savedPath.length - 1]).addTo(map);
+        }
+
+        // --- Start/Stop Tracking Logic ---
+        const startBtn = document.getElementById('startBtn');
+
+        startBtn.addEventListener('click', () => {
+            if (watchId) {
+                // Stop tracking
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                startBtn.innerText = "Start Tracking";
+                startBtn.style.backgroundColor = "#2b82cb"; // Back to blue
+            } else {
+                // Start tracking
+                if ("geolocation" in navigator) {
+                    startBtn.innerText = "Tracking... (Stop)";
+                    startBtn.style.backgroundColor = "#f39c12"; // Yellow while tracking
+                    
+                    watchId = navigator.geolocation.watchPosition(
+                        updatePosition, 
+                        handleError, 
+                        { enableHighAccuracy: true, maximumAge: 0 }
+                    );
+                } else {
+                    alert("Geolocation is not supported by your browser.");
+                }
+            }
+        });
+
+        // --- Clear Track Logic ---
+        const clearBtn = document.getElementById('clearBtn');
+        
+        clearBtn.addEventListener('click', () => {
+            if(confirm("Are you sure you want to erase your saved route?")) {
+                savedPath = []; // Empty the array
+                localStorage.removeItem('myGpsPath'); // Delete from phone memory
+                pathLine.setLatLngs(savedPath); // Erase line on map
+                
+                if (currentMarker) {
+                    map.removeLayer(currentMarker); // Remove marker
+                    currentMarker = null;
+                }
+            }
+        });
+
+        // --- Update GPS Position ---
+        function updatePosition(position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const newPoint = [lat, lng];
+
+            // Add the new location to our path array
+            savedPath.push(newPoint);
+            
+            // Save the updated path to the phone's local storage
+            localStorage.setItem('myGpsPath', JSON.stringify(savedPath));
+
+            // Update the line on the map
+            pathLine.setLatLngs(savedPath);
+
+            // Update or create a marker for your current location
+            if (currentMarker) {
+                currentMarker.setLatLng(newPoint);
+            } else {
+                currentMarker = L.marker(newPoint).addTo(map);
+            }
+
+            // Smoothly pan the map to your current location
+            map.flyTo(newPoint, 17, { animate: true, duration: 0.5 }); 
+        }
+
+        function handleError(error) {
+            console.error("Error getting location: ", error.message);
+            if(error.code === 1) {
+                alert("Please allow location permissions in your browser.");
+            }
+        }
+    </script>
+</body>
+</html>
